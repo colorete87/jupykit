@@ -1,0 +1,17 @@
+# Editor scratch
+*.swp
+*.swo
+*~
+
+# Runtime artifacts (when developing jupykit itself by running it in cwd)
+.run/
+jupynium/
+.ipynb_checkpoints/
+Untitled*.ipynb
+Untitled*.ju.py
+
+# Backups left by the install wizard during local testing
+*.bak.[0-9]*
+
+# Reference docs (specs/plans) — kept local, not tracked
+docs/
