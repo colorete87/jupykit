@@ -373,15 +373,6 @@ return {
     dependencies = { "stevearc/dressing.nvim" },
     $triggers
     init = function()
-      -- jupynium's auto_attach_to_server uses opts.default_notebook_URL,
-      -- which by default points at the project root. When the .ju.py
-      -- lives in a subdirectory, jupyter's home view at the project root
-      -- doesn't list the sibling .ipynb, and jupynium's start_sync
-      -- creates an Untitled.ipynb at the root instead of opening the
-      -- existing file. Workaround: just before BufWinEnter triggers
-      -- jupynium's autocmd, mutate default_notebook_URL to point at
-      -- localhost:8888/tree/<relative-subdir> so the listing contains
-      -- the sibling notebook.
       vim.api.nvim_create_autocmd("BufWinEnter", {
         pattern = { "*.ju.*", "*.md" },
         callback = function()
@@ -398,6 +389,31 @@ return {
           if ok and jopts and jopts.opts then
             jopts.opts.default_notebook_URL = url
           end
+
+          local bufpath = vim.fn.expand("%:p")
+          if not bufpath:match("%.ju%.") then return end
+
+          local ipynb = bufpath:gsub("%.ju%.py$", ".ipynb")
+          if vim.fn.filereadable(ipynb) == 0 then
+            vim.fn.system({ "jupytext", "--to", "ipynb", "-o", ipynb, bufpath })
+          end
+
+          -- Jupynium's built-in auto_start_sync passes %:r:r (includes
+          -- the directory path) but the Jupyter file browser shows only
+          -- the basename. Use %:t:r:r so the names actually match.
+          local filename = vim.fn.expand("%:t:r:r")
+          local bufnr = vim.api.nvim_get_current_buf()
+          vim.defer_fn(function()
+            if type(Jupynium_syncing_bufs) == "table" and Jupynium_syncing_bufs[bufnr] then
+              return
+            end
+            local found = vim.wait(5000, function()
+              return vim.fn.exists(":JupyniumStartSync") > 0
+            end, 100)
+            if found and type(Jupynium_start_sync) == "function" then
+              Jupynium_start_sync(bufnr, filename, false)
+            end
+          end, 100)
         end,
         group = vim.api.nvim_create_augroup("jupykit_notebook_url", { clear = true }),
       })
@@ -429,7 +445,7 @@ return {
       return {
         python_host = find_venv_python(),
         default_notebook_URL = "localhost:8888",
-        auto_start_sync = { enable = true },
+        auto_start_sync = { enable = false },
       }
     end,
 $keys_block
