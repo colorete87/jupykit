@@ -51,7 +51,7 @@ Wizard flags (apply to --install / --install-nvim; --yes also applies to --unins
   --bin-only             Install script to ~/.local/bin/jupykit (--install only)
   --no-nvim-install      Skip nvim configuration step (--install only)
   --nvim-load ft|cmd|eager|manual    Lazy loading strategy
-  --nvim-keymaps all|none|jj,jk,jcr  Optional jupynium keymaps (comma-separated)
+  --nvim-keymaps all|none|jj,jJ,jcr,jn,jp  Optional keymaps (comma-separated)
 
 Sync options:
   --no-sync              Skip the sync phase entirely
@@ -358,18 +358,21 @@ _generate_plugin_lua() {
           vim.fn.search("^# %%", "W")
         end,
         mode = "n",
-        desc = "Execute cell and advance",
+        desc = "Run cell, move to next",
       },'
   fi
-  if [[ ",$keymaps," == *",jk,"* ]]; then
+  if [[ ",$keymaps," == *",jJ,"* ]]; then
     keys_entries+='
       {
-        "<leader>jk",
+        "<leader>jJ",
         function()
-          vim.fn.search("^# %%", "bW")
+          local pos = vim.api.nvim_win_get_cursor(0)
+          vim.cmd("normal! VG")
+          vim.cmd("'\''<,'\''>JupyniumExecuteSelectedCells")
+          vim.api.nvim_win_set_cursor(0, pos)
         end,
         mode = "n",
-        desc = "Go to previous cell",
+        desc = "Run from this cell to end",
       },'
   fi
   if [[ ",$keymaps," == *",jcr,"* ]]; then
@@ -380,7 +383,29 @@ _generate_plugin_lua() {
           vim.cmd("JupyniumExecuteSelectedCells")
         end,
         mode = "n",
-        desc = "Execute cell",
+        desc = "Run cell",
+      },'
+  fi
+  if [[ ",$keymaps," == *",jn,"* ]]; then
+    keys_entries+='
+      {
+        "<leader>jn",
+        function()
+          vim.fn.search("^# %%", "W")
+        end,
+        mode = "n",
+        desc = "Next cell",
+      },'
+  fi
+  if [[ ",$keymaps," == *",jp,"* ]]; then
+    keys_entries+='
+      {
+        "<leader>jp",
+        function()
+          vim.fn.search("^# %%", "bW")
+        end,
+        mode = "n",
+        desc = "Previous cell",
       },'
   fi
 
@@ -487,14 +512,14 @@ $keys_block
 EOF
 }
 
-# Prompt for individual keymaps. Echoes comma-separated list (e.g. "jj,jk,jcr")
+# Prompt for individual keymaps. Echoes comma-separated list (e.g. "jj,jJ,jcr,jn,jp")
 # or empty string. Honors WIZARD_NVIM_KEYMAP env var:
 #   "all"/"yes" → all keymaps, "none"/"no" → none, or comma-separated subset.
 _prompt_keymaps() {
   if [[ -n "${WIZARD_NVIM_KEYMAP:-}" ]]; then
     case "${WIZARD_NVIM_KEYMAP,,}" in
-      all|yes) echo "jj,jk,jcr"; return 0 ;;
-      none|no) echo "";           return 0 ;;
+      all|yes) echo "jj,jJ,jcr,jn,jp"; return 0 ;;
+      none|no) echo "";                 return 0 ;;
       *)       echo "$WIZARD_NVIM_KEYMAP"; return 0 ;;
     esac
   fi
@@ -503,17 +528,23 @@ _prompt_keymaps() {
   local result=""
   local letter
 
-  echo "    <leader>jj  Execute cell and advance" >&2
-  letter=$(prompt_letter "    Add" "YN" "Y")
-  [[ "$letter" == "Y" ]] && result+="jj"
+  local -a names=( jj    jJ    jcr       jn    jp )
+  local -a keys=(  "jj"  "jJ"  "j<CR>"   "jn"  "jp" )
+  local -a descs=( "Run cell, move to next"
+                   "Run from this cell to end"
+                   "Run cell"
+                   "Next cell"
+                   "Previous cell" )
 
-  echo "    <leader>jk  Go to previous cell" >&2
-  letter=$(prompt_letter "    Add" "YN" "Y")
-  [[ "$letter" == "Y" ]] && { [[ -n "$result" ]] && result+=","; result+="jk"; }
-
-  echo "    <leader>j<CR>  Execute cell" >&2
-  letter=$(prompt_letter "    Add" "YN" "Y")
-  [[ "$letter" == "Y" ]] && { [[ -n "$result" ]] && result+=","; result+="jcr"; }
+  local i
+  for i in "${!names[@]}"; do
+    echo "    <leader>${keys[$i]}  ${descs[$i]}" >&2
+    letter=$(prompt_letter "    Add" "YN" "Y")
+    if [[ "$letter" == "Y" ]]; then
+      [[ -n "$result" ]] && result+=","
+      result+="${names[$i]}"
+    fi
+  done
 
   echo "$result"
 }
@@ -697,7 +728,7 @@ while (( $# > 0 )); do
       shift
       case "${1:-}" in
         all|yes|none|no) WIZARD_NVIM_KEYMAP="$1" ;;
-        *) [[ "$1" =~ ^(jj|jk|jcr)(,(jj|jk|jcr))*$ ]] || die "--nvim-keymaps must be 'all', 'none', or a comma-separated subset of jj,jk,jcr"
+        *) [[ "$1" =~ ^(jj|jJ|jcr|jn|jp)(,(jj|jJ|jcr|jn|jp))*$ ]] || die "--nvim-keymaps must be 'all', 'none', or a comma-separated subset of jj,jJ,jcr,jn,jp"
            WIZARD_NVIM_KEYMAP="$1" ;;
       esac ;;
     --install)
