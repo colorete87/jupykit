@@ -50,7 +50,7 @@ Wizard flags (apply to --install / --install-nvim; --yes also applies to --unins
   --bin-only             Install script to ~/.local/bin/jupykit (--install only)
   --no-nvim-install      Skip nvim configuration step (--install only)
   --nvim-load ft|cmd|eager|manual    Lazy loading strategy
-  --nvim-advance-keymap yes|no       Add the optional <leader>j<CR> keymap
+  --nvim-keymaps yes|no              Add optional jupynium keymaps
 
 Sync options:
   --no-sync              Skip the sync phase entirely
@@ -318,7 +318,7 @@ NVIM_HOST_FILE="$NVIM_CONFIG_DIR/jupykit.lua"
 
 # Generate the jupynium.lua content for a given load mode + keymap choice.
 # $1 = mode (ft|cmd|eager|manual)
-# $2 = advance_keymap (yes|no) — add <leader>j<CR> "execute and advance"
+# $2 = keymaps (yes|no) — add optional jupynium keymaps
 # $3 = project_venv_basename (e.g. ".jupykit-venv") — embedded in the lua resolver
 # stdout = the generated lua content
 #
@@ -337,7 +337,7 @@ NVIM_HOST_FILE="$NVIM_CONFIG_DIR/jupykit.lua"
 #    from cwd looking for a project-local venv, so this single spec file
 #    works across multiple projects.
 _generate_plugin_lua() {
-  local mode="$1" advance_keymap="${2:-no}" project_venv="${3:-.jupykit-venv}"
+  local mode="$1" keymaps="${2:-no}" project_venv="${3:-.jupykit-venv}"
   local triggers
   case "$mode" in
     ft)     triggers='event = { { event = { "BufReadPre", "BufNewFile" }, pattern = { "*.ju.*" } } },' ;;
@@ -348,16 +348,32 @@ _generate_plugin_lua() {
   esac
 
   local keys_block=""
-  if [[ "$advance_keymap" == "yes" ]]; then
+  if [[ "$keymaps" == "yes" ]]; then
     keys_block='    keys = {
       {
-        "<leader>j<CR>",
+        "<leader>jj",
         function()
           vim.cmd("JupyniumExecuteSelectedCells")
           vim.fn.search("^# %%", "W")
         end,
-        mode = { "n", "x" },
+        mode = "n",
         desc = "Execute cell and advance",
+      },
+      {
+        "<leader>jk",
+        function()
+          vim.fn.search("^# %%", "bW")
+        end,
+        mode = "n",
+        desc = "Go to previous cell",
+      },
+      {
+        "<leader>j<CR>",
+        function()
+          vim.cmd("JupyniumExecuteSelectedCells")
+        end,
+        mode = "n",
+        desc = "Execute cell",
       },
     },'
   fi
@@ -446,6 +462,7 @@ return {
         python_host = find_venv_python(),
         default_notebook_URL = "localhost:8888",
         auto_start_sync = { enable = false },
+        auto_download_ipynb = false,
       }
     end,
 $keys_block
@@ -506,23 +523,24 @@ wizard_step_nvim() {
     esac
   fi
 
-  # Sub-prompt: keep jupynium's default keymaps, optionally add <leader>j<CR>.
-  local advance_keymap
+  local keymaps_choice
   if [[ -n "${WIZARD_NVIM_KEYMAP:-}" ]]; then
-    advance_keymap="$WIZARD_NVIM_KEYMAP"
+    keymaps_choice="$WIZARD_NVIM_KEYMAP"
   else
-    echo "  Add optional <leader>j<CR> 'execute cell and advance' keymap?" >&2
-    echo "  (Jupynium's default keymaps are kept regardless.)" >&2
+    echo "  Add optional keymaps? (Jupynium's defaults are kept regardless.)" >&2
+    echo "    <leader>jj  Execute cell and advance" >&2
+    echo "    <leader>jk  Go to previous cell" >&2
+    echo "    <leader>j<CR>  Execute cell" >&2
     local letter
     letter=$(prompt_letter "  Choice" "YN" "Y")
-    [[ "$letter" == "Y" ]] && advance_keymap="yes" || advance_keymap="no"
+    [[ "$letter" == "Y" ]] && keymaps_choice="yes" || keymaps_choice="no"
   fi
 
   # Generate content. python_host is resolved inside the lua spec itself
   # (no separate lua/config/jupykit.lua needed), so the spec stays portable
   # across projects and survives even when LazyVim doesn't auto-require it.
   local new_plugin_content
-  new_plugin_content=$(_generate_plugin_lua "$load_mode" "$advance_keymap" "$JUPYKIT_PROJECT_VENV")
+  new_plugin_content=$(_generate_plugin_lua "$load_mode" "$keymaps_choice" "$JUPYKIT_PROJECT_VENV")
 
   # Plugin file: backup/skip/diff prompt if it exists
   mkdir -p "$NVIM_PLUGINS_DIR"
@@ -623,11 +641,11 @@ while (( $# > 0 )); do
         ft|cmd|eager|manual) WIZARD_NVIM_LOAD="$1" ;;
         *) die "--nvim-load must be one of: ft cmd eager manual" ;;
       esac ;;
-    --nvim-advance-keymap)
+    --nvim-keymaps)
       shift
       case "${1:-}" in
         yes|no) WIZARD_NVIM_KEYMAP="$1" ;;
-        *) die "--nvim-advance-keymap must be 'yes' or 'no'" ;;
+        *) die "--nvim-keymaps must be 'yes' or 'no'" ;;
       esac ;;
     --install)
       [[ "$MODE" == "run" ]] || die "only one mode flag allowed (--install/--install-nvim/--uninstall/--doctor)"
@@ -662,7 +680,7 @@ if [[ "$MODE" != "install" && "$MODE" != "install-nvim" && "$MODE" != "uninstall
   if (( WIZARD_YES )) || [[ -n "${WIZARD_VENV_CHOICE:-}" ]] \
      || [[ -n "${WIZARD_BIN_CHOICE:-}" ]] || [[ -n "${WIZARD_NVIM_CHOICE:-}" ]] \
      || [[ -n "${WIZARD_NVIM_LOAD:-}" ]]  || [[ -n "${WIZARD_NVIM_KEYMAP:-}" ]]; then
-    die "wizard flags (--yes/--venv/--bin-only/--no-nvim-install/--nvim-load/--nvim-advance-keymap) require --install, --install-nvim, or --uninstall"
+    die "wizard flags (--yes/--venv/--bin-only/--no-nvim-install/--nvim-load/--nvim-keymaps) require --install, --install-nvim, or --uninstall"
   fi
 fi
 
@@ -671,7 +689,7 @@ if [[ "$MODE" == "uninstall" ]]; then
   if [[ -n "${WIZARD_VENV_CHOICE:-}" ]] || [[ -n "${WIZARD_BIN_CHOICE:-}" ]] \
      || [[ -n "${WIZARD_NVIM_CHOICE:-}" ]] || [[ -n "${WIZARD_NVIM_LOAD:-}" ]] \
      || [[ -n "${WIZARD_NVIM_KEYMAP:-}" ]]; then
-    die "--uninstall only accepts --yes; --venv/--bin-only/--no-nvim-install/--nvim-load/--nvim-advance-keymap are install-only"
+    die "--uninstall only accepts --yes; --venv/--bin-only/--no-nvim-install/--nvim-load/--nvim-keymaps are install-only"
   fi
 fi
 
