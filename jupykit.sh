@@ -51,7 +51,7 @@ Wizard flags (apply to --install / --install-nvim; --yes also applies to --unins
   --bin-only             Install script to ~/.local/bin/jupykit (--install only)
   --no-nvim-install      Skip nvim configuration step (--install only)
   --nvim-load ft|cmd|eager|manual    Lazy loading strategy
-  --nvim-keymaps all|none|jj,jJ,jcr,jx,jc,jk,jo  Optional <leader>j keymaps
+  --nvim-keymaps all|none|jj,jJ,jX,jcr,jx,jc,jk,jo  Optional <leader>j keymaps
 
 Sync options:
   --no-sync              Skip the sync phase entirely
@@ -388,6 +388,20 @@ _generate_plugin_lua() {
         desc = "Run from this cell to end",
       },'
   fi
+  if [[ ",$keymaps," == *",jX,"* ]]; then
+    keys_entries+='
+      {
+        "<leader>jX",
+        function()
+          local pos = vim.api.nvim_win_get_cursor(0)
+          vim.cmd("normal! ggVG")
+          vim.cmd("'\''<,'\''>JupyniumExecuteSelectedCells")
+          vim.api.nvim_win_set_cursor(0, pos)
+        end,
+        mode = "n",
+        desc = "Run all cells",
+      },'
+  fi
   if [[ ",$keymaps," == *",jcr,"* ]]; then
     keys_entries+='
       { "<leader>j<CR>", "<cmd>JupyniumExecuteSelectedCells<cr>", mode = "n", desc = "Run cell" },'
@@ -524,8 +538,8 @@ EOF
 _prompt_keymaps() {
   if [[ -n "${WIZARD_NVIM_KEYMAP:-}" ]]; then
     case "${WIZARD_NVIM_KEYMAP,,}" in
-      all|yes) echo "jj,jJ,jcr,jx,jc,jk,jo"; return 0 ;;
-      none|no) echo "";                       return 0 ;;
+      all|yes) echo "jj,jJ,jX,jcr,jx,jc,jk,jo"; return 0 ;;
+      none|no) echo "";                          return 0 ;;
       *)       echo "$WIZARD_NVIM_KEYMAP";    return 0 ;;
     esac
   fi
@@ -534,10 +548,11 @@ _prompt_keymaps() {
   local result=""
   local letter
 
-  local -a names=( jj    jJ    jcr       jx    jc    jk    jo )
-  local -a keys=(  "jj"  "jJ"  "j<CR>"   "jx"  "jc"  "jk"  "jo" )
+  local -a names=( jj    jJ    jX    jcr       jx    jc    jk    jo )
+  local -a keys=(  "jj"  "jJ"  "jX"  "j<CR>"   "jx"  "jc"  "jk"  "jo" )
   local -a descs=( "Run cell, move to next"
                    "Run from this cell to end"
+                   "Run all cells"
                    "Run cell"
                    "Execute selected cells"
                    "Clear selected cells outputs"
@@ -736,7 +751,7 @@ while (( $# > 0 )); do
       shift
       case "${1:-}" in
         all|yes|none|no) WIZARD_NVIM_KEYMAP="$1" ;;
-        *) [[ "$1" =~ ^(jj|jJ|jcr|jx|jc|jk|jo)(,(jj|jJ|jcr|jx|jc|jk|jo))*$ ]] || die "--nvim-keymaps must be 'all', 'none', or a comma-separated subset of jj,jJ,jcr,jx,jc,jk,jo"
+        *) [[ "$1" =~ ^(jj|jJ|jX|jcr|jx|jc|jk|jo)(,(jj|jJ|jX|jcr|jx|jc|jk|jo))*$ ]] || die "--nvim-keymaps must be 'all', 'none', or a comma-separated subset of jj,jJ,jX,jcr,jx,jc,jk,jo"
            WIZARD_NVIM_KEYMAP="$1" ;;
       esac ;;
     --install)
